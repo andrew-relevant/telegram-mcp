@@ -1,3 +1,6 @@
 fn main() {
-    // The broker step forwards stdin/stdout to the tray socket.
+    let code = telegram_mcp_stdio::entry();
+    if code != 0 {
+        std::process::exit(code);
+    }
 }

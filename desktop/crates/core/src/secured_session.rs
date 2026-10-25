@@ -16,7 +16,6 @@ use libsql::params;
 
 use crate::secrets::{self, SecretStore, SecretStoreError};
 
-const APP_DIR_NAME: &str = "app.telegram-mcp.desktop";
 const SESSION_FILE_NAME: &str = "session.sqlite";
 
 #[derive(Debug)]
@@ -74,9 +73,7 @@ pub struct KeychainSession<S> {
 }
 
 pub fn app_data_dir() -> Result<PathBuf, SessionStoreError> {
-    dirs::data_dir()
-        .map(|path| path.join(APP_DIR_NAME))
-        .ok_or(SessionStoreError::MissingDataDir)
+    telegram_mcp_ipc::app_data_dir().map_err(|_| SessionStoreError::MissingDataDir)
 }
 
 pub fn session_file_path() -> Result<PathBuf, SessionStoreError> {
@@ -447,7 +444,7 @@ mod tests {
         let path = app_data_dir().unwrap();
         assert_eq!(
             path.file_name().and_then(|name| name.to_str()),
-            Some(APP_DIR_NAME)
+            Some(telegram_mcp_ipc::APP_DIR_NAME)
         );
     }
 

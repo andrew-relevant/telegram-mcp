@@ -11,6 +11,9 @@ tauri-build = { version = "=2.7.4" }
 
 [dependencies]
 tauri = { version = "=2.12.5" }
+tauri-plugin-single-instance = "=2.5.4"
+telegram-mcp-ipc = { path = "../crates/ipc" }
+telegram-mcp-mcp = { path = "../crates/mcp" }
 
 [features]
 default = ["custom-protocol"]
