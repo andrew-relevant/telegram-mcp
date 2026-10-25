@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/mcp",
+    "crates/ipc",
+    "crates/stdio",
+    "src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+publish = false
+rust-version = "1.90"

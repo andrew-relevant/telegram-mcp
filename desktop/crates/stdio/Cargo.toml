@@ -1,0 +1,10 @@
+[package]
+name = "telegram-mcp"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+description = "stdio shim that connects MCP clients to the tray"
+
+[dependencies]
+telegram-mcp-ipc = { path = "../ipc" }

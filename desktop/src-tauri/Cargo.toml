@@ -1,0 +1,17 @@
+[package]
+name = "telegram-mcp-desktop"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+description = "Telegram MCP tray application"
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4" }
+
+[dependencies]
+tauri = { version = "=2.12.5" }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

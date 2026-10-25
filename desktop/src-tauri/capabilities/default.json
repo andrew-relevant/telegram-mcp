@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Default window of the empty shell",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
