@@ -6,6 +6,8 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
+/// Windows credential service, and the name of keychain items written by
+/// earlier macOS builds. Current macOS builds do not open this service.
 pub const SERVICE_NAME: &str = "app.telegram-mcp.desktop";
 pub const API_ID_ACCOUNT: &str = "api-id";
 pub const API_HASH_ACCOUNT: &str = "api-hash";
@@ -218,6 +220,22 @@ impl SecretStore for MemorySecretStore {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SystemSecretStore;
 
+#[cfg(target_os = "macos")]
+impl SecretStore for SystemSecretStore {
+    fn get(&self, account: &str) -> Result<Option<Vec<u8>>, SecretStoreError> {
+        crate::macos_keychain::get(account)
+    }
+
+    fn set(&self, account: &str, secret: &[u8]) -> Result<(), SecretStoreError> {
+        crate::macos_keychain::set(account, secret)
+    }
+
+    fn delete(&self, account: &str) -> Result<(), SecretStoreError> {
+        crate::macos_keychain::delete(account)
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
 impl SecretStore for SystemSecretStore {
     fn get(&self, account: &str) -> Result<Option<Vec<u8>>, SecretStoreError> {
         match keyring_entry(account)?.get_secret() {
@@ -241,10 +259,12 @@ impl SecretStore for SystemSecretStore {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn keyring_entry(account: &str) -> Result<keyring::Entry, SecretStoreError> {
     keyring::Entry::new(SERVICE_NAME, account).map_err(secret_error)
 }
 
+#[cfg(not(target_os = "macos"))]
 fn secret_error(error: keyring::Error) -> SecretStoreError {
     SecretStoreError::new(error.to_string())
 }

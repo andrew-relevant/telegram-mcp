@@ -5,130 +5,753 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Telegram MCP</title>
     <style>
-      :root { color-scheme: light dark; font-family: sans-serif; }
-      body { margin: 0; padding: 24px; max-width: 720px; }
-      h1 { font-size: 1.4rem; }
-      section { margin: 16px 0; }
-      label { display: block; margin: 8px 0; }
-      input[type="text"], input[type="password"], input[type="number"] {
-        width: 100%; box-sizing: border-box; padding: 8px;
+      :root {
+        color-scheme: light dark;
+        --canvas: #e7e7ec;
+        --card: #ffffff;
+        --text: #1d1d1f;
+        --muted: #6e6e73;
+        --line: rgba(0, 0, 0, 0.08);
+        --line-strong: rgba(0, 0, 0, 0.16);
+        --field: #ffffff;
+        --accent: #0f6ea6;
+        --accent-hover: #0c5d8c;
+        --accent-soft: rgba(15, 110, 166, 0.12);
+        --danger: #b42318;
+        --danger-bg: #fdeceb;
+        --info-bg: #e7f3fa;
+        --info-text: #0c4f78;
+        --warn-bg: #fff4e0;
+        --warn-text: #7a4e00;
+        --track: #d2d2d7;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        --dot-idle: #8e8e93;
+        --dot-wait: #c47d12;
+        --dot-ok: #1b8a45;
       }
-      button { margin-right: 8px; margin-top: 8px; padding: 8px 12px; }
-      #qr { width: 280px; height: 280px; background: white; }
-      #message { white-space: pre-wrap; }
-      .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --canvas: #141416;
+          --card: #232326;
+          --text: #f4f4f6;
+          --muted: #a1a1a8;
+          --line: rgba(255, 255, 255, 0.08);
+          --line-strong: rgba(255, 255, 255, 0.18);
+          --field: #1b1b1e;
+          --accent: #4aa3d8;
+          --accent-hover: #6bb6e2;
+          --accent-soft: rgba(74, 163, 216, 0.16);
+          --danger: #ff8d84;
+          --danger-bg: rgba(180, 35, 24, 0.22);
+          --info-bg: rgba(74, 163, 216, 0.16);
+          --info-text: #c5e6f8;
+          --warn-bg: rgba(196, 125, 18, 0.18);
+          --warn-text: #ffd48a;
+          --track: #3a3a3e;
+          --shadow: none;
+          --dot-idle: #8e8e93;
+          --dot-wait: #e0a84a;
+          --dot-ok: #4ec97a;
+        }
+      }
+
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+
+      html, body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        background: var(--canvas);
+        color: var(--text);
+        font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button, input { font: inherit; color: inherit; }
+      button { cursor: pointer; }
+      button:disabled { cursor: default; opacity: 0.45; }
+      button:focus-visible, input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      .shell {
+        height: 100%;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 14px;
+        padding: 18px 20px 16px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 40px;
+      }
+
+      .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+      .logo {
+        width: 36px;
+        height: 36px;
+        border-radius: 9px;
+        background: #2aabee;
+        display: grid;
+        place-items: center;
+        flex: none;
+      }
+      .logo svg { display: block; }
+      .name { font-size: 15px; font-weight: 600; letter-spacing: -0.015em; }
+      .tag { color: var(--muted); font-size: 12px; margin-top: 1px; }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        height: 28px;
+        padding: 0 10px 0 9px;
+        border-radius: 999px;
+        background: var(--card);
+        box-shadow: var(--shadow), inset 0 0 0 1px var(--line);
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--dot-idle);
+        flex: none;
+      }
+      .chip.wait .dot { background: var(--dot-wait); }
+      .chip.ok .dot { background: var(--dot-ok); }
+      .chip.ok { color: var(--text); }
+
+      .body {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 292px;
+        gap: 14px;
+      }
+
+      .card {
+        background: var(--card);
+        border-radius: 14px;
+        box-shadow: var(--shadow), inset 0 0 0 1px var(--line);
+        min-height: 0;
+      }
+
+      main.card {
+        padding: 26px 28px 22px;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+      }
+
+      aside.card {
+        padding: 18px 16px 14px;
+        display: flex;
+        flex-direction: column;
+        overflow: auto;
+      }
+
+      h1, h2, p { margin: 0; }
+      h1 { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.2; }
+      h2 { font-size: 13px; font-weight: 600; }
+      .lead { margin-top: 8px; color: var(--muted); max-width: 46ch; }
+      .fine { margin-top: 10px; color: var(--muted); font-size: 12px; max-width: 52ch; }
+
+      .banner {
+        margin-bottom: 16px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        white-space: pre-wrap;
+      }
+      .banner.error { background: var(--danger-bg); color: var(--danger); }
+      .banner.info { background: var(--info-bg); color: var(--info-text); }
+      .banner.warn { background: var(--warn-bg); color: var(--warn-text); }
+
+      .screen { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+      form { margin-top: 22px; max-width: 420px; }
+      .field { display: block; margin: 0 0 14px; }
+      .field span { display: block; margin-bottom: 6px; font-weight: 600; }
+      input[type="text"], input[type="password"] {
+        width: 100%;
+        height: 36px;
+        padding: 0 12px;
+        border-radius: 8px;
+        border: 1px solid var(--line-strong);
+        background: var(--field);
+      }
+      input::placeholder { color: var(--muted); }
+
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+      button.primary, button.ghost, button.danger, button.small {
+        height: 36px;
+        padding: 0 14px;
+        border-radius: 8px;
+      }
+      button.primary {
+        background: #0f6ea6;
+        color: #fff;
+        border: 0;
+        font-weight: 600;
+      }
+      button.primary:hover { background: #0c5d8c; }
+      button.ghost {
+        background: transparent;
+        border: 1px solid var(--line-strong);
+      }
+      button.ghost:hover { background: var(--accent-soft); }
+      button.danger {
+        background: transparent;
+        color: var(--danger);
+        border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+      }
+      button.danger:hover { background: var(--danger-bg); }
+      button.small { height: 28px; padding: 0 10px; font-size: 12px; min-width: 112px; }
+
+      .qr-layout {
+        margin-top: 20px;
+        display: grid;
+        grid-template-columns: 232px minmax(0, 1fr);
+        gap: 22px;
+        align-items: center;
+      }
+      .plate {
+        width: 232px;
+        height: 232px;
+        padding: 10px;
+        border-radius: 16px;
+        background: #fff;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+      }
+      #qr, #qr svg { width: 100%; height: 100%; display: block; }
+      .steps {
+        counter-reset: step;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .steps li {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        min-height: 32px;
+      }
+      .steps li + li { margin-top: 8px; }
+      .steps li::before {
+        counter-increment: step;
+        content: counter(step);
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 650;
+        display: grid;
+        place-items: center;
+        flex: none;
+        margin-top: 1px;
+      }
+
+      .hint {
+        margin-top: 14px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: var(--accent-soft);
+        max-width: 420px;
+      }
+
+      .who { display: flex; align-items: center; gap: 14px; }
+      .avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: var(--accent-soft);
+        color: var(--accent);
+        display: grid;
+        place-items: center;
+        font-size: 18px;
+        font-weight: 650;
+        flex: none;
+      }
+      .who h1 { font-size: 20px; }
+      .switch {
+        position: relative;
+        margin-top: 22px;
+        max-width: 460px;
+        display: grid;
+        grid-template-columns: 40px minmax(0, 1fr);
+        gap: 12px;
+        align-items: center;
+        padding: 12px;
+        border-radius: 12px;
+        box-shadow: inset 0 0 0 1px var(--line);
+      }
+      .switch input {
+        position: absolute;
+        opacity: 0;
+        width: 40px;
+        height: 24px;
+        margin: 0;
+      }
+      .track {
+        width: 40px;
+        height: 24px;
+        border-radius: 999px;
+        background: var(--track);
+        position: relative;
+      }
+      .track::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+        transition: transform 0.15s ease;
+      }
+      .switch input:checked + .track { background: #0f6ea6; }
+      .switch input:checked + .track::after { transform: translateX(16px); }
+      .switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .switch b { display: block; font-weight: 600; }
+      .switch small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+      #logout { margin-top: auto; align-self: flex-start; }
+
+      aside h2 { padding: 0 4px; }
+      .aside-lead { margin: 6px 4px 8px; color: var(--muted); font-size: 12px; }
+      .client {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 10px;
+        align-items: center;
+        padding: 12px 4px;
+        border-top: 1px solid var(--line);
+      }
+      .client b { font-weight: 600; }
+      .client .state { grid-column: 1; color: var(--muted); font-size: 12px; }
+      .client button { grid-row: 1 / span 2; grid-column: 2; }
+      .footnote { margin-top: 8px; padding: 4px 4px 2px; color: var(--muted); font-size: 12px; }
+
+      .modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.32);
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      .dialog {
+        width: min(400px, 100%);
+        background: var(--card);
+        color: var(--text);
+        border-radius: 14px;
+        padding: 18px;
+        box-shadow: 0 16px 50px rgba(0, 0, 0, 0.24);
+      }
+      .dialog p { font-size: 14px; }
+      .dialog .actions { justify-content: flex-end; }
     </style>
   </head>
   <body>
-    <h1>Telegram MCP</h1>
-    <p id="message"></p>
+    <div class="shell">
+      <header>
+        <div class="brand">
+          <div class="logo" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24">
+              <path fill="#fff" d="M21.2 4.4 2.9 11.2c-.8.3-.8.8-.1 1l4.7 1.5 1.8 5.5c.2.6.1.8.7.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.7.4 1.2.2 1.4-.7l3.1-14.6c.3-1.2-.4-1.7-1.2-1.2ZM9 13.4l8.6-5.4c.4-.3.8-.1.5.2l-7.2 6.5-.3 3.1-1.6-4.4Z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="name">Telegram MCP</div>
+            <div class="tag">Сессия Telegram на этом компьютере</div>
+          </div>
+        </div>
+        <div class="chip" id="chip"><span class="dot"></span><span id="chip-label">Нужны ключи</span></div>
+      </header>
 
-    <section id="credentials">
-      <p>Сначала укажите api_id и api_hash своего приложения. QR появится после сохранения.</p>
-      <label>api_id <input id="api-id" type="number" min="1" /></label>
-      <label>api_hash <input id="api-hash" type="password" autocomplete="off" /></label>
-      <button id="save" type="button">Сохранить</button>
-      <button id="replace" type="button">Выйти и записать</button>
-    </section>
+      <div class="body">
+        <main class="card">
+          <div id="banner" class="banner" hidden></div>
 
-    <section id="qr-section" hidden>
-      <div id="qr"></div>
-    </section>
+          <section class="screen" id="credentials">
+            <h1>Ключи приложения</h1>
+            <p class="lead">Возьмите api_id и api_hash на my.telegram.org. QR появится после сохранения. Ключи остаются в связке этой системы.</p>
+            <form id="cred-form">
+              <label class="field"><span>api_id</span>
+                <input id="api-id" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" />
+              </label>
+              <label class="field"><span>api_hash</span>
+                <input id="api-hash" type="password" autocomplete="off" spellcheck="false" />
+              </label>
+              <div class="actions">
+                <button id="save" class="primary" type="submit">Сохранить</button>
+                <button id="replace" class="ghost" type="button">Выйти и записать</button>
+              </div>
+            </form>
+            <p class="fine">«Выйти и записать» стирает текущую сессию. Так меняют api_id другого приложения.</p>
+          </section>
 
-    <section id="password-section" hidden>
-      <p id="hint"></p>
-      <label>Облачный пароль <input id="password" type="password" autocomplete="off" /></label>
-      <button id="password-submit" type="button">Войти</button>
-    </section>
+          <section class="screen" id="qr-section" hidden>
+            <h1>Подключите устройство</h1>
+            <p class="lead">Код на экране обновляется сам, примерно каждые 30 секунд.</p>
+            <div class="qr-layout">
+              <div class="plate"><div id="qr"></div></div>
+              <ol class="steps">
+                <li>Откройте Telegram на телефоне</li>
+                <li>Настройки → Устройства</li>
+                <li>Подключить устройство и наведите камеру</li>
+              </ol>
+            </div>
+            <div class="actions" style="margin-top: 22px">
+              <button id="qr-cancel" class="ghost" type="button">Выйти</button>
+            </div>
+          </section>
 
-    <section id="ready-section" hidden>
-      <p id="account"></p>
-      <label class="row"><input id="sending" type="checkbox" /> Разрешить отправку</label>
-      <button id="logout" type="button">Выйти</button>
-    </section>
+          <section class="screen" id="password-section" hidden>
+            <h1>Облачный пароль</h1>
+            <p class="lead">Telegram просит пароль двухэтапной проверки.</p>
+            <form id="password-form">
+              <p id="hint" class="hint" hidden></p>
+              <label class="field"><span>Пароль</span>
+                <input id="password" type="password" autocomplete="off" />
+              </label>
+              <div class="actions">
+                <button id="password-submit" class="primary" type="submit">Войти</button>
+                <button id="password-cancel" class="ghost" type="button">Выйти</button>
+              </div>
+            </form>
+          </section>
 
-    <section>
-      <h2>Клиенты</h2>
-      <p>После подключения полностью перезапустите клиент. chatgpt.com локальный процесс не запускает.</p>
-      <div class="row"><button type="button" data-client="cursor" data-on="true">Подключить Cursor</button><button type="button" data-client="cursor" data-on="false">Отключить</button><span id="cursor-state"></span></div>
-      <div class="row"><button type="button" data-client="claude" data-on="true">Подключить Claude</button><button type="button" data-client="claude" data-on="false">Отключить</button><span id="claude-state"></span></div>
-      <div class="row"><button type="button" data-client="chatgpt" data-on="true">Подключить ChatGPT</button><button type="button" data-client="chatgpt" data-on="false">Отключить</button><span id="chatgpt-state"></span></div>
-    </section>
+          <section class="screen" id="ready-section" hidden>
+            <div class="who">
+              <div class="avatar" id="avatar" aria-hidden="true"></div>
+              <div>
+                <h1 id="account">Вход выполнен</h1>
+                <p class="lead" id="account-lead">Сессия хранится на этом компьютере.</p>
+              </div>
+            </div>
+            <label class="switch">
+              <input id="sending" type="checkbox" />
+              <span class="track" aria-hidden="true"></span>
+              <span>
+                <b>Разрешить отправку</b>
+                <small>Пока выключено, отправка в чаты не выполняется.</small>
+              </span>
+            </label>
+            <button id="logout" class="danger" type="button">Выйти</button>
+          </section>
+        </main>
+
+        <aside class="card">
+          <h2>Клиенты</h2>
+          <p class="aside-lead">Меняется только блок telegram. Остальные серверы остаются как были.</p>
+          <div class="client">
+            <b>Cursor</b>
+            <div class="state" id="cursor-state">Не подключён</div>
+            <button type="button" class="small primary" data-client="cursor" id="cursor-action">Подключить</button>
+          </div>
+          <div class="client">
+            <b>Claude</b>
+            <div class="state" id="claude-state">Не подключён</div>
+            <button type="button" class="small primary" data-client="claude" id="claude-action">Подключить</button>
+          </div>
+          <div class="client">
+            <b>ChatGPT</b>
+            <div class="state" id="chatgpt-state">Не подключён</div>
+            <button type="button" class="small primary" data-client="chatgpt" id="chatgpt-action">Подключить</button>
+          </div>
+          <p class="footnote">После подключения полностью перезапустите клиент. Сайт chatgpt.com локальный процесс не запускает — нужна программа ChatGPT.</p>
+        </aside>
+      </div>
+    </div>
+
+    <div id="modal" class="modal" hidden>
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="modal-text">
+        <p id="modal-text"></p>
+        <div class="actions">
+          <button id="modal-cancel" class="ghost" type="button">Отмена</button>
+          <button id="modal-ok" class="danger" type="button">Выйти</button>
+        </div>
+      </div>
+    </div>
+
     <script>
-      const invoke = (command, args) => window.__TAURI__.core.invoke(command, args);
-      const message = document.querySelector("#message");
+      const QUIET = new Set([
+        "Отсканируйте QR в Telegram: Настройки → Устройства → Подключить устройство.",
+        "Включен облачный пароль."
+      ]);
+      const banner = document.querySelector("#banner");
+      const chip = document.querySelector("#chip");
+      const qr = document.querySelector("#qr");
+      let last = null;
+      let shown = "";
+      let invokeError = null;
+      let invokeScreen = "";
+      let notice = null;
+
+      function bridge() {
+        const tauri = window.__TAURI__;
+        if (!tauri || !tauri.core || !tauri.core.invoke) return null;
+        return (command, args) => tauri.core.invoke(command, args);
+      }
+
+      function ask(text, okLabel) {
+        const modal = document.querySelector("#modal");
+        const ok = document.querySelector("#modal-ok");
+        const cancel = document.querySelector("#modal-cancel");
+        modal.hidden = false;
+        document.querySelector("#modal-text").textContent = text;
+        ok.textContent = okLabel;
+        cancel.focus();
+        return new Promise((resolve) => {
+          const finish = (value) => {
+            modal.hidden = true;
+            ok.onclick = null;
+            cancel.onclick = null;
+            modal.onclick = null;
+            modal.onkeydown = null;
+            resolve(value);
+          };
+          ok.onclick = () => finish(true);
+          cancel.onclick = () => finish(false);
+          modal.onclick = (event) => {
+            if (event.target === modal) finish(false);
+          };
+          modal.onkeydown = (event) => {
+            if (event.key === "Escape") finish(false);
+          };
+        });
+      }
+
+      function paintBanner(status) {
+        if (invokeError && status.screen === invokeScreen) {
+          banner.hidden = false;
+          banner.className = "banner error";
+          banner.textContent = invokeError;
+          return;
+        }
+        invokeError = null;
+        if (status.client_error) {
+          banner.hidden = false;
+          banner.className = "banner error";
+          banner.textContent = status.client_error;
+          return;
+        }
+        if (status.message && !QUIET.has(status.message)) {
+          const warn = status.message.startsWith("Кэш");
+          banner.hidden = false;
+          banner.className = warn ? "banner warn" : "banner error";
+          banner.textContent = status.message;
+          return;
+        }
+        if (notice && Date.now() < notice.until) {
+          banner.hidden = false;
+          banner.className = "banner info";
+          banner.textContent = notice.text;
+          return;
+        }
+        notice = null;
+        banner.hidden = true;
+        banner.textContent = "";
+      }
+
+      function setClientRow(name, on) {
+        const button = document.querySelector("#" + name + "-action");
+        const state = document.querySelector("#" + name + "-state");
+        button.dataset.on = on ? "false" : "true";
+        button.textContent = on ? "Отключить" : "Подключить";
+        button.classList.toggle("primary", !on);
+        button.classList.toggle("danger", on);
+        state.textContent = on ? "Подключён" : "Не подключён";
+      }
 
       function show(status) {
+        last = status;
         document.querySelector("#credentials").hidden = status.screen !== "credentials";
         document.querySelector("#qr-section").hidden = status.screen !== "qr";
         document.querySelector("#password-section").hidden = status.screen !== "password";
         document.querySelector("#ready-section").hidden = status.screen !== "ready";
-        message.textContent = [status.message, status.client_error].filter(Boolean).join("\n");
-        const qr = document.querySelector("#qr");
-        if (status.screen === "qr" && status.qr_svg) qr.innerHTML = status.qr_svg;
-        else qr.replaceChildren();
-        document.querySelector("#hint").textContent = status.password_hint
-          ? "Подсказка: " + status.password_hint
-          : "Подсказки нет.";
-        document.querySelector("#account").textContent = status.account_name
-          ? "Аккаунт: " + status.account_name
-          : "Вход выполнен.";
+        paintBanner(status);
+
+        if (status.screen === "qr" && status.qr_svg) {
+          if (qr.dataset.svg !== status.qr_svg) {
+            qr.dataset.svg = status.qr_svg;
+            qr.innerHTML = status.qr_svg;
+          }
+        } else if (qr.dataset.svg) {
+          qr.dataset.svg = "";
+          qr.replaceChildren();
+        }
+
+        const hint = document.querySelector("#hint");
+        if (status.password_hint) {
+          hint.hidden = false;
+          hint.textContent = "Подсказка: " + status.password_hint;
+        } else {
+          hint.hidden = true;
+          hint.textContent = "";
+        }
+
+        const account = document.querySelector("#account");
+        const avatar = document.querySelector("#avatar");
+        if (status.account_name) {
+          account.textContent = status.account_name;
+          avatar.textContent = status.account_name.trim().charAt(0).toUpperCase();
+        } else {
+          account.textContent = "Вход выполнен";
+          avatar.textContent = "";
+        }
         document.querySelector("#sending").checked = status.sending;
-        document.querySelector("#cursor-state").textContent = status.cursor ? "подключён" : "выключен";
-        document.querySelector("#claude-state").textContent = status.claude ? "подключён" : "выключен";
-        document.querySelector("#chatgpt-state").textContent = status.chatgpt ? "подключён" : "выключен";
+        setClientRow("cursor", status.cursor);
+        setClientRow("claude", status.claude);
+        setClientRow("chatgpt", status.chatgpt);
+
+        const labels = {
+          credentials: ["Нужны ключи", ""],
+          qr: ["Ждём сканирование", "wait"],
+          password: ["Облачный пароль", "wait"],
+          ready: [status.account_name || "Вход выполнен", "ok"]
+        };
+        const pair = labels[status.screen] || labels.credentials;
+        document.querySelector("#chip-label").textContent = pair[0];
+        chip.className = "chip" + (pair[1] ? " " + pair[1] : "");
+
+        if (status.screen !== shown) {
+          shown = status.screen;
+          if (status.screen === "password") document.querySelector("#password").focus();
+          if (status.screen === "credentials") document.querySelector("#api-id").focus();
+        }
       }
 
-      async function refresh() {
-        try { show(await invoke("status")); }
-        catch (error) { message.textContent = String(error); }
+      function fail(error) {
+        invokeError = String(error);
+        invokeScreen = last ? last.screen : shown;
+        if (last) paintBanner(last);
+        else {
+          banner.hidden = false;
+          banner.className = "banner error";
+          banner.textContent = invokeError;
+        }
       }
 
-      document.querySelector("#save").onclick = () => save(false);
-      document.querySelector("#replace").onclick = () => save(true);
+      function readLogin() {
+        const apiId = Number(document.querySelector("#api-id").value.trim());
+        const apiHash = document.querySelector("#api-hash").value.trim();
+        if (!Number.isInteger(apiId) || apiId <= 0 || !apiHash) {
+          fail("Укажите api_id и api_hash.");
+          return null;
+        }
+        return { apiId, apiHash };
+      }
+
       async function save(replace) {
+        const invoke = bridge();
+        if (!invoke) return;
+        const fields = readLogin();
+        if (!fields) return;
+        if (replace) {
+          const agreed = await ask(
+            "Сессия будет удалена, затем запишутся новые ключи.",
+            "Выйти и записать"
+          );
+          if (!agreed) return;
+        }
+        invokeError = null;
         try {
           await invoke("save_credentials", {
-            apiId: Number(document.querySelector("#api-id").value),
-            apiHash: document.querySelector("#api-hash").value,
+            apiId: fields.apiId,
+            apiHash: fields.apiHash,
             replace
           });
           document.querySelector("#api-hash").value = "";
         } catch (error) {
-          message.textContent = String(error);
+          fail(error);
         }
       }
 
-      document.querySelector("#password-submit").onclick = async () => {
+      document.querySelector("#cred-form").onsubmit = (event) => {
+        event.preventDefault();
+        save(false);
+      };
+      document.querySelector("#replace").onclick = () => save(true);
+
+      document.querySelector("#password-form").onsubmit = async (event) => {
+        event.preventDefault();
+        const invoke = bridge();
+        if (!invoke) return;
         const field = document.querySelector("#password");
+        invokeError = null;
+        if (last) paintBanner(last);
         try {
           await invoke("submit_password", { password: field.value });
           field.value = "";
         } catch (error) {
-          message.textContent = String(error);
+          fail(error);
         }
       };
-      document.querySelector("#logout").onclick = async () => {
+
+      async function logout() {
+        const invoke = bridge();
+        if (!invoke) return;
+        const agreed = await ask(
+          "Сессия и ключи приложения будут удалены с этого компьютера.",
+          "Выйти"
+        );
+        if (!agreed) return;
         try { await invoke("logout"); }
-        catch (error) { message.textContent = String(error); }
-      };
+        catch (error) { fail(error); }
+      }
+      document.querySelector("#logout").onclick = logout;
+      document.querySelector("#qr-cancel").onclick = logout;
+      document.querySelector("#password-cancel").onclick = logout;
+
       document.querySelector("#sending").onchange = async (event) => {
+        const invoke = bridge();
+        if (!invoke) return;
         try { await invoke("set_sending", { enabled: event.target.checked }); }
-        catch (error) { message.textContent = String(error); }
+        catch (error) { fail(error); }
       };
+
       for (const button of document.querySelectorAll("[data-client]")) {
         button.onclick = async () => {
+          const invoke = bridge();
+          if (!invoke) return;
+          button.disabled = true;
           try {
-            message.textContent = await invoke("set_client", {
+            const text = await invoke("set_client", {
               kind: button.dataset.client,
               enabled: button.dataset.on === "true"
             });
+            notice = { text, until: Date.now() + 8000 };
+            invokeError = null;
+            if (last) show(last);
           } catch (error) {
-            message.textContent = String(error);
+            fail(error);
+          } finally {
+            button.disabled = false;
+            refresh();
           }
-          refresh();
         };
       }
+
+      async function refresh() {
+        const invoke = bridge();
+        if (!invoke) return;
+        try { show(await invoke("status")); }
+        catch (error) { fail(error); }
+      }
+
       refresh();
       setInterval(refresh, 1000);
     </script>

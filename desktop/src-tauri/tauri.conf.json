@@ -13,9 +13,13 @@
       {
         "label": "main",
         "title": "Telegram MCP",
-        "width": 800,
-        "height": 600,
-        "resizable": true
+        "width": 920,
+        "height": 640,
+        "minWidth": 840,
+        "minHeight": 560,
+        "center": true,
+        "resizable": true,
+        "backgroundColor": "#e7e7ec"
       }
     ]
   },
