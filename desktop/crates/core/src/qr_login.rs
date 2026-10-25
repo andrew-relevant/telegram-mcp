@@ -10,7 +10,9 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use grammers_client::client::PasswordToken;
-use grammers_client::sender::{ConnectionParams, SenderPool, SenderPoolHandle};
+use grammers_client::sender::{
+    ConnectionParams, SenderPool, SenderPoolFatHandle, SenderPoolHandle,
+};
 use grammers_client::tl;
 use grammers_client::{Client, SignInError};
 use grammers_session::storages::SqliteSession;
@@ -118,7 +120,15 @@ pub async fn run(api_id: i32, api_hash: &str) -> Result<(), QrLoginError> {
         if client.is_authorized().await? {
             println!("Сессия уже есть, QR не нужен.");
         } else {
-            sign_in_with_qr(&client, &session, &handle, &mut updates, api_id, api_hash).await?;
+            sign_in_with_qr(
+                &client,
+                session.as_ref(),
+                &handle,
+                &mut updates,
+                api_id,
+                api_hash,
+            )
+            .await?;
         }
         print_summary(&client).await
     }
@@ -146,37 +156,29 @@ fn restrict_session_file(path: &std::path::Path) -> Result<(), QrLoginError> {
     Ok(())
 }
 
-async fn sign_in_with_qr(
+async fn sign_in_with_qr<S>(
     client: &Client,
-    session: &SqliteSession,
+    session: &S,
     handle: &SenderPoolHandle,
     updates: &mut mpsc::Receiver<UpdatesLike>,
     api_id: i32,
     api_hash: &str,
-) -> Result<(), QrLoginError> {
+) -> Result<(), QrLoginError>
+where
+    S: Session,
+    S::Error: std::fmt::Display,
+{
     println!("Отсканируйте QR в Telegram: Настройки → Устройства → Подключить устройство.");
     println!("Новый код появится сам, примерно каждые 30 секунд.");
 
     loop {
-        let exported = match client
-            .invoke(&tl::functions::auth::ExportLoginToken {
-                api_id,
-                api_hash: api_hash.to_string(),
-                except_ids: Vec::new(),
-            })
-            .await
-        {
-            Ok(token) => token,
-            Err(error) if error.is("SESSION_PASSWORD_NEEDED") => {
+        match advance_login(client, session, handle, api_id, api_hash).await? {
+            LoginStep::Authorized => return Ok(()),
+            LoginStep::PasswordNeeded => {
                 finish_password(client).await?;
                 return Ok(());
             }
-            Err(error) => return Err(error.into()),
-        };
-
-        match accept_token(client, session, handle, exported).await? {
-            Accepted::Authorized => return Ok(()),
-            Accepted::Qr { token, expires } => {
+            LoginStep::Qr { token, expires } => {
                 println!();
                 println!("{}", render_qr(&login_qr_url(&token))?);
                 println!();
@@ -189,14 +191,161 @@ async fn sign_in_with_qr(
 enum Accepted {
     Authorized,
     Qr { token: Vec<u8>, expires: i32 },
+    PasswordNeeded,
 }
 
-async fn accept_token(
+/// One step of QR login. The caller shows the code or asks for the cloud password.
+pub enum LoginStep {
+    Authorized,
+    Qr { token: Vec<u8>, expires: i32 },
+    PasswordNeeded,
+}
+
+pub enum PasswordAttempt {
+    Accepted,
+    Rejected(PasswordToken),
+}
+
+/// A connected client. Dropping it does not log out.
+pub struct Connected {
+    pub client: Client,
+    pub handle: SenderPoolFatHandle,
+    pub updates: mpsc::Receiver<UpdatesLike>,
+    runner: tokio::task::JoinHandle<()>,
+}
+
+impl Connected {
+    pub async fn shutdown(self) {
+        drop(self);
+    }
+}
+
+impl Drop for Connected {
+    fn drop(&mut self) {
+        self.handle.quit();
+        self.runner.abort();
+    }
+}
+
+pub async fn connect<S>(session: Arc<S>, api_id: i32) -> Result<Connected, QrLoginError>
+where
+    S: Session,
+    S::Error: std::error::Error + Send + Sync + 'static,
+{
+    let params = ConnectionParams {
+        device_model: DEVICE_MODEL.to_string(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        ..ConnectionParams::default()
+    };
+    let SenderPool {
+        runner,
+        handle,
+        updates,
+    } = SenderPool::with_configuration(session, api_id, params);
+    let client = Client::new(handle.clone());
+    let runner = tokio::spawn(runner.run());
+    Ok(Connected {
+        client,
+        handle,
+        updates,
+        runner,
+    })
+}
+
+pub async fn advance_login<S>(
     client: &Client,
-    session: &SqliteSession,
+    session: &S,
+    handle: &SenderPoolHandle,
+    api_id: i32,
+    api_hash: &str,
+) -> Result<LoginStep, QrLoginError>
+where
+    S: Session,
+    S::Error: std::fmt::Display,
+{
+    let exported = match client
+        .invoke(&tl::functions::auth::ExportLoginToken {
+            api_id,
+            api_hash: api_hash.to_string(),
+            except_ids: Vec::new(),
+        })
+        .await
+    {
+        Ok(token) => token,
+        Err(error) if error.is("SESSION_PASSWORD_NEEDED") => {
+            return Ok(LoginStep::PasswordNeeded);
+        }
+        Err(error) => return Err(error.into()),
+    };
+    match accept_token(client, session, handle, exported).await? {
+        Accepted::Authorized => Ok(LoginStep::Authorized),
+        Accepted::PasswordNeeded => Ok(LoginStep::PasswordNeeded),
+        Accepted::Qr { token, expires } => Ok(LoginStep::Qr { token, expires }),
+    }
+}
+
+pub async fn begin_password(client: &Client) -> Result<PasswordToken, QrLoginError> {
+    let info: tl::types::account::Password = client
+        .invoke(&tl::functions::account::GetPassword {})
+        .await?
+        .into();
+    Ok(PasswordToken::new(info))
+}
+
+pub async fn try_password(
+    client: &Client,
+    token: PasswordToken,
+    password: &str,
+) -> Result<PasswordAttempt, QrLoginError> {
+    match client.check_password(token, password.to_owned()).await {
+        Ok(_) => Ok(PasswordAttempt::Accepted),
+        Err(SignInError::InvalidPassword(token)) => Ok(PasswordAttempt::Rejected(token)),
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub fn login_qr_svg(token: &[u8]) -> Result<String, QrLoginError> {
+    let code =
+        QrCode::new(login_qr_url(token)).map_err(|error| QrLoginError::new(error.to_string()))?;
+    let scale = 8usize;
+    let quiet = 4usize;
+    let modules = code.width();
+    let size = (modules + quiet * 2) * scale;
+    let mut rects = String::new();
+    for y in 0..modules {
+        for x in 0..modules {
+            if code[(x, y)] != qrcode::Color::Dark {
+                continue;
+            }
+            let left = (x + quiet) * scale;
+            let top = (y + quiet) * scale;
+            rects.push_str(&format!(
+                r#"<rect x="{left}" y="{top}" width="{scale}" height="{scale}"/>"#
+            ));
+        }
+    }
+    Ok(format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {size} {size}\" shape-rendering=\"crispEdges\"><rect width=\"100%\" height=\"100%\" fill=\"#fff\"/>{rects}</svg>"
+    ))
+}
+
+/// One pass over dialogs so later calls can reuse the peer cache.
+pub async fn warm_dialogs(client: &Client) -> Result<(), QrLoginError> {
+    let mut dialogs = client.iter_dialogs();
+    while dialogs.next().await?.is_some() {}
+    Ok(())
+}
+
+async fn accept_token<S>(
+    client: &Client,
+    session: &S,
     handle: &SenderPoolHandle,
     mut token: tl::enums::auth::LoginToken,
-) -> Result<Accepted, QrLoginError> {
+) -> Result<Accepted, QrLoginError>
+where
+    S: Session,
+    S::Error: std::fmt::Display,
+{
     for _ in 0..4 {
         match token {
             tl::enums::auth::LoginToken::Token(qr) => {
@@ -208,8 +357,8 @@ async fn accept_token(
             tl::enums::auth::LoginToken::Success(_) => return Ok(Accepted::Authorized),
             tl::enums::auth::LoginToken::MigrateTo(migrate) => {
                 match import_migrated(client, session, handle, migrate).await? {
-                    Some(next) => token = next,
-                    None => return Ok(Accepted::Authorized),
+                    ImportOutcome::Next(next) => token = *next,
+                    ImportOutcome::PasswordNeeded => return Ok(Accepted::PasswordNeeded),
                 }
             }
         }
@@ -219,12 +368,21 @@ async fn accept_token(
     ))
 }
 
-async fn import_migrated(
+enum ImportOutcome {
+    Next(Box<tl::enums::auth::LoginToken>),
+    PasswordNeeded,
+}
+
+async fn import_migrated<S>(
     client: &Client,
-    session: &SqliteSession,
+    session: &S,
     handle: &SenderPoolHandle,
     migrate: tl::types::auth::LoginTokenMigrateTo,
-) -> Result<Option<tl::enums::auth::LoginToken>, QrLoginError> {
+) -> Result<ImportOutcome, QrLoginError>
+where
+    S: Session,
+    S::Error: std::fmt::Display,
+{
     let old_dc = session
         .home_dc_id()
         .map_err(|error| QrLoginError::new(error.to_string()))?;
@@ -251,30 +409,22 @@ async fn import_migrated(
     }
 
     match imported {
-        Ok(token) => Ok(Some(token)),
-        Err(error) if error.is("SESSION_PASSWORD_NEEDED") => {
-            finish_password(client).await?;
-            Ok(None)
-        }
+        Ok(token) => Ok(ImportOutcome::Next(Box::new(token))),
+        Err(error) if error.is("SESSION_PASSWORD_NEEDED") => Ok(ImportOutcome::PasswordNeeded),
         Err(error) => Err(error.into()),
     }
 }
 
 async fn finish_password(client: &Client) -> Result<(), QrLoginError> {
-    let info: tl::types::account::Password = client
-        .invoke(&tl::functions::account::GetPassword {})
-        .await?
-        .into();
-    let mut token = PasswordToken::new(info);
+    let mut token = begin_password(client).await?;
     loop {
         let password = prompt_password(token.hint())?;
-        match client.check_password(token, password).await {
-            Ok(_) => return Ok(()),
-            Err(SignInError::InvalidPassword(again)) => {
+        match try_password(client, token, &password).await? {
+            PasswordAttempt::Accepted => return Ok(()),
+            PasswordAttempt::Rejected(again) => {
                 eprintln!("Неверный пароль.");
                 token = again;
             }
-            Err(error) => return Err(error.into()),
         }
     }
 }
@@ -295,7 +445,10 @@ fn prompt_password(hint: Option<&str>) -> Result<String, QrLoginError> {
     Ok(password)
 }
 
-async fn wait_for_login_update(updates: &mut mpsc::Receiver<UpdatesLike>, delay: Duration) -> bool {
+pub async fn wait_for_login_update(
+    updates: &mut mpsc::Receiver<UpdatesLike>,
+    delay: Duration,
+) -> bool {
     let deadline = tokio::time::Instant::now() + delay;
     loop {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
@@ -389,6 +542,14 @@ mod tests {
         assert!(!token.contains('+'));
         assert!(!token.contains('/'));
         assert!(!token.contains('='));
+    }
+
+    #[test]
+    fn qr_svg_is_markup_without_the_login_url() {
+        let svg = login_qr_svg(&[0xfb, 0xff, 0xfe]).unwrap();
+        assert!(svg.starts_with("<svg "));
+        assert!(svg.contains("<rect "));
+        assert!(!svg.contains("tg://"));
     }
 
     #[test]

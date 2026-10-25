@@ -10,10 +10,15 @@ description = "Telegram MCP tray application"
 tauri-build = { version = "=2.7.4" }
 
 [dependencies]
-tauri = { version = "=2.12.5" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tauri = { version = "=2.12.5", features = ["tray-icon"] }
 tauri-plugin-single-instance = "=2.5.4"
+telegram-mcp-core = { path = "../crates/core" }
 telegram-mcp-ipc = { path = "../crates/ipc" }
 telegram-mcp-mcp = { path = "../crates/mcp" }
+tokio = { version = "1.53.3", features = ["sync"] }
+toml_edit = "0.22"
 
 [features]
 default = ["custom-protocol"]

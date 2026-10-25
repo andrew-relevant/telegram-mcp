@@ -4,8 +4,133 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Telegram MCP</title>
+    <style>
+      :root { color-scheme: light dark; font-family: sans-serif; }
+      body { margin: 0; padding: 24px; max-width: 720px; }
+      h1 { font-size: 1.4rem; }
+      section { margin: 16px 0; }
+      label { display: block; margin: 8px 0; }
+      input[type="text"], input[type="password"], input[type="number"] {
+        width: 100%; box-sizing: border-box; padding: 8px;
+      }
+      button { margin-right: 8px; margin-top: 8px; padding: 8px 12px; }
+      #qr { width: 280px; height: 280px; background: white; }
+      #message { white-space: pre-wrap; }
+      .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+    </style>
   </head>
   <body>
     <h1>Telegram MCP</h1>
+    <p id="message"></p>
+
+    <section id="credentials">
+      <p>Сначала укажите api_id и api_hash своего приложения. QR появится после сохранения.</p>
+      <label>api_id <input id="api-id" type="number" min="1" /></label>
+      <label>api_hash <input id="api-hash" type="password" autocomplete="off" /></label>
+      <button id="save" type="button">Сохранить</button>
+      <button id="replace" type="button">Выйти и записать</button>
+    </section>
+
+    <section id="qr-section" hidden>
+      <div id="qr"></div>
+    </section>
+
+    <section id="password-section" hidden>
+      <p id="hint"></p>
+      <label>Облачный пароль <input id="password" type="password" autocomplete="off" /></label>
+      <button id="password-submit" type="button">Войти</button>
+    </section>
+
+    <section id="ready-section" hidden>
+      <p id="account"></p>
+      <label class="row"><input id="sending" type="checkbox" /> Разрешить отправку</label>
+      <button id="logout" type="button">Выйти</button>
+    </section>
+
+    <section>
+      <h2>Клиенты</h2>
+      <p>После подключения полностью перезапустите клиент. chatgpt.com локальный процесс не запускает.</p>
+      <div class="row"><button type="button" data-client="cursor" data-on="true">Подключить Cursor</button><button type="button" data-client="cursor" data-on="false">Отключить</button><span id="cursor-state"></span></div>
+      <div class="row"><button type="button" data-client="claude" data-on="true">Подключить Claude</button><button type="button" data-client="claude" data-on="false">Отключить</button><span id="claude-state"></span></div>
+      <div class="row"><button type="button" data-client="chatgpt" data-on="true">Подключить ChatGPT</button><button type="button" data-client="chatgpt" data-on="false">Отключить</button><span id="chatgpt-state"></span></div>
+    </section>
+    <script>
+      const invoke = (command, args) => window.__TAURI__.core.invoke(command, args);
+      const message = document.querySelector("#message");
+
+      function show(status) {
+        document.querySelector("#credentials").hidden = status.screen !== "credentials";
+        document.querySelector("#qr-section").hidden = status.screen !== "qr";
+        document.querySelector("#password-section").hidden = status.screen !== "password";
+        document.querySelector("#ready-section").hidden = status.screen !== "ready";
+        message.textContent = [status.message, status.client_error].filter(Boolean).join("\n");
+        const qr = document.querySelector("#qr");
+        if (status.screen === "qr" && status.qr_svg) qr.innerHTML = status.qr_svg;
+        else qr.replaceChildren();
+        document.querySelector("#hint").textContent = status.password_hint
+          ? "Подсказка: " + status.password_hint
+          : "Подсказки нет.";
+        document.querySelector("#account").textContent = status.account_name
+          ? "Аккаунт: " + status.account_name
+          : "Вход выполнен.";
+        document.querySelector("#sending").checked = status.sending;
+        document.querySelector("#cursor-state").textContent = status.cursor ? "подключён" : "выключен";
+        document.querySelector("#claude-state").textContent = status.claude ? "подключён" : "выключен";
+        document.querySelector("#chatgpt-state").textContent = status.chatgpt ? "подключён" : "выключен";
+      }
+
+      async function refresh() {
+        try { show(await invoke("status")); }
+        catch (error) { message.textContent = String(error); }
+      }
+
+      document.querySelector("#save").onclick = () => save(false);
+      document.querySelector("#replace").onclick = () => save(true);
+      async function save(replace) {
+        try {
+          await invoke("save_credentials", {
+            apiId: Number(document.querySelector("#api-id").value),
+            apiHash: document.querySelector("#api-hash").value,
+            replace
+          });
+          document.querySelector("#api-hash").value = "";
+        } catch (error) {
+          message.textContent = String(error);
+        }
+      }
+
+      document.querySelector("#password-submit").onclick = async () => {
+        const field = document.querySelector("#password");
+        try {
+          await invoke("submit_password", { password: field.value });
+          field.value = "";
+        } catch (error) {
+          message.textContent = String(error);
+        }
+      };
+      document.querySelector("#logout").onclick = async () => {
+        try { await invoke("logout"); }
+        catch (error) { message.textContent = String(error); }
+      };
+      document.querySelector("#sending").onchange = async (event) => {
+        try { await invoke("set_sending", { enabled: event.target.checked }); }
+        catch (error) { message.textContent = String(error); }
+      };
+      for (const button of document.querySelectorAll("[data-client]")) {
+        button.onclick = async () => {
+          try {
+            message.textContent = await invoke("set_client", {
+              kind: button.dataset.client,
+              enabled: button.dataset.on === "true"
+            });
+          } catch (error) {
+            message.textContent = String(error);
+          }
+          refresh();
+        };
+      }
+      refresh();
+      setInterval(refresh, 1000);
+    </script>
   </body>
 </html>

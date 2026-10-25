@@ -77,13 +77,17 @@ pub async fn serve(listener: &mut Listener, state: Arc<AppState>) -> Result<(), 
     }
 }
 
-pub async fn serve_default() -> Result<(), String> {
+pub async fn serve_with(state: Arc<AppState>) -> Result<(), String> {
     let endpoint = default_endpoint().map_err(|error| error.to_string())?;
     let mut listener = listen(&endpoint).await.map_err(|error| error.to_string())?;
+    serve(&mut listener, state).await
+}
+
+pub async fn serve_default() -> Result<(), String> {
     let state = AppState::new(SendGate::load(
         &app_data_dir().map_err(|error| error.to_string())?,
     ));
-    serve(&mut listener, state).await
+    serve_with(state).await
 }
 
 #[cfg(test)]
