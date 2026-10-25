@@ -1,3 +1,4 @@
 /target/
 /src-tauri/gen/
+/src-tauri/binaries/
 /crates/core/qr-spike.session*

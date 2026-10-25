@@ -8,6 +8,9 @@ use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, WindowEvent};
+use tauri_plugin_autostart::MacosLauncher;
+#[cfg(not(debug_assertions))]
+use tauri_plugin_autostart::ManagerExt;
 use telegram_mcp_ipc::app_data_dir;
 use telegram_mcp_mcp::{serve_with, AppState, SendGate};
 
@@ -35,6 +38,10 @@ fn main() {
                 let _ = window.set_focus();
             }
         }))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(desk)
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
@@ -48,6 +55,10 @@ fn main() {
             }
             if let Err(error) = install_tray(app.handle()) {
                 eprintln!("трей не создан: {error}");
+            }
+            #[cfg(not(debug_assertions))]
+            if let Err(error) = app.autolaunch().enable() {
+                eprintln!("автозапуск не включился: {error}");
             }
             Ok(())
         })
