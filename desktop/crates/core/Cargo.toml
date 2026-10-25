@@ -5,3 +5,10 @@ edition.workspace = true
 publish.workspace = true
 rust-version.workspace = true
 description = "Telegram client, QR login, and session storage"
+
+[dependencies]
+grammers-client = "=0.11.0"
+# grammers-client turns session defaults off. SqliteSession is behind this feature.
+grammers-session = { version = "=0.11.0", features = ["sqlite-storage"] }
+qrcode = { version = "=0.14.1", default-features = false }
+tokio = { version = "1.53.3", features = ["io-std", "macros", "rt-multi-thread", "sync", "time"] }
