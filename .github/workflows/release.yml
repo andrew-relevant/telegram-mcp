@@ -1,0 +1,57 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin
+          - platform: windows-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop -> target
+
+      - name: Install Tauri CLI 2.12.4
+        run: cargo install tauri-cli --version 2.12.4 --locked
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop/src-tauri
+          tauriScript: cargo tauri
+          tagName: v__VERSION__
+          releaseName: Telegram MCP v__VERSION__
+          releaseBody: |
+            macOS: откройте DMG и перетащите Telegram MCP в «Программы». Файл aarch64 — для Apple Silicon, x64 — для Intel. При первом запуске система напишет, что разработчик не опознан: «Системные настройки» → «Конфиденциальность и безопасность» → «Всё равно открыть».
+
+            Windows: запустите установщик. SmartScreen может запросить подтверждение.
+
+            В окне приложения введите api_id и api_hash с my.telegram.org, отсканируйте QR и нажмите «Подключить» у нужного клиента. После этого клиент нужно полностью перезапустить.
+          releaseDraft: true
+          prerelease: false
+          uploadUpdaterJson: false
+          retryAttempts: 3
+          args: ${{ matrix.args }}
