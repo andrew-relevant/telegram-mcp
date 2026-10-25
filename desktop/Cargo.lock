@@ -4423,6 +4423,8 @@ name = "telegram-mcp-mcp"
 version = "0.1.0"
 dependencies = [
  "rmcp",
+ "serde_json",
+ "telegram-mcp-core",
  "telegram-mcp-ipc",
  "tokio",
 ]

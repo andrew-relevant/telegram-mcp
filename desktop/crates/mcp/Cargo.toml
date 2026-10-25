@@ -8,6 +8,8 @@ description = "MCP server and Telegram tools"
 
 [dependencies]
 rmcp = { version = "=3.7.0", default-features = false, features = ["server", "transport-async-rw"] }
+serde_json = "1"
+telegram-mcp-core = { path = "../core" }
 telegram-mcp-ipc = { path = "../ipc" }
 tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread", "time"] }
 
