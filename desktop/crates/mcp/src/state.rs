@@ -2,11 +2,17 @@
 //!
 //! The switch defaults to off. Tool names stay in `tools/list` either way.
 
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
+use telegram_mcp_core::chats::MessageRecord;
 use telegram_mcp_core::live::Telegram;
+use tokio::sync::broadcast;
+use tokio::task::JoinHandle;
+
+const INCOMING_LIMIT: usize = 50;
 
 const FLAG_NAME: &str = "send-enabled";
 
@@ -54,9 +60,52 @@ impl SendGate {
     }
 }
 
+struct IncomingFeed {
+    recent: Mutex<VecDeque<MessageRecord>>,
+    ticks: broadcast::Sender<()>,
+}
+
+impl IncomingFeed {
+    fn new() -> Self {
+        let (ticks, _) = broadcast::channel(32);
+        Self {
+            recent: Mutex::new(VecDeque::new()),
+            ticks,
+        }
+    }
+
+    fn record(&self, message: MessageRecord) {
+        let mut recent = self
+            .recent
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        recent.push_back(message);
+        while recent.len() > INCOMING_LIMIT {
+            recent.pop_front();
+        }
+        let _ = self.ticks.send(());
+    }
+
+    fn snapshot(&self) -> Vec<MessageRecord> {
+        self.recent
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .iter()
+            .cloned()
+            .collect()
+    }
+
+    fn subscribe(&self) -> broadcast::Receiver<()> {
+        self.ticks.subscribe()
+    }
+}
+
 pub struct AppState {
     pub gate: SendGate,
     telegram: RwLock<Option<Arc<dyn Telegram>>>,
+    incoming: IncomingFeed,
+    legacy: Mutex<Vec<Arc<AtomicBool>>>,
+    update_task: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl AppState {
@@ -64,14 +113,70 @@ impl AppState {
         Arc::new(Self {
             gate,
             telegram: RwLock::new(None),
+            incoming: IncomingFeed::new(),
+            legacy: Mutex::new(Vec::new()),
+            update_task: Mutex::new(None),
         })
     }
 
     pub fn set_telegram(&self, telegram: Option<Arc<dyn Telegram>>) {
+        if telegram.is_none() {
+            self.stop_updates();
+        }
         *self
             .telegram
             .write()
             .unwrap_or_else(|poison| poison.into_inner()) = telegram;
+    }
+
+    pub fn set_update_task(&self, task: JoinHandle<()>) {
+        self.stop_updates();
+        *self
+            .update_task
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner()) = Some(task);
+    }
+
+    pub fn record_incoming(&self, message: MessageRecord) {
+        self.incoming.record(message);
+    }
+
+    pub(crate) fn incoming_messages(&self) -> Vec<MessageRecord> {
+        self.incoming.snapshot()
+    }
+
+    pub(crate) fn subscribe_incoming(&self) -> broadcast::Receiver<()> {
+        self.incoming.subscribe()
+    }
+
+    pub(crate) fn track_legacy(&self, alive: Arc<AtomicBool>) {
+        self.legacy
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .push(alive);
+    }
+
+    pub(crate) fn stop_legacy(&self) {
+        let flags = std::mem::take(
+            &mut *self
+                .legacy
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner()),
+        );
+        for flag in flags {
+            flag.store(false, Ordering::Relaxed);
+        }
+    }
+
+    fn stop_updates(&self) {
+        if let Some(task) = self
+            .update_task
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .take()
+        {
+            task.abort();
+        }
     }
 
     pub(crate) fn telegram(&self) -> Option<Arc<dyn Telegram>> {

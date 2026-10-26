@@ -8,6 +8,7 @@ description = "Telegram client, QR login, and session storage"
 
 [dependencies]
 grammers-client = "=0.11.0"
+jiff = "=0.2.38"
 # grammers-client turns session defaults off. SqliteSession is behind this feature.
 grammers-session = { version = "=0.11.0", features = ["sqlite-storage"] }
 libsql = { version = "=0.10.0", default-features = false, features = ["core"] }

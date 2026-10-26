@@ -232,7 +232,7 @@ async fn session_loop(
             return;
         };
         wait_for_click = false;
-        match run_session(&state, &desk, &mut inbox, saved).await {
+        match run_session(Arc::clone(&state), &desk, &mut inbox, saved).await {
             Ok(LoopControl::Restart) => desk.set_phase(Phase::screen("credentials")),
             Ok(LoopControl::Continue) => {}
             Err(message) => {
@@ -322,7 +322,7 @@ fn store_login(api_id: i32, api_hash: String) -> Result<SavedLogin, String> {
 }
 
 async fn run_session(
-    state: &AppState,
+    state: Arc<AppState>,
     desk: &Desk,
     inbox: &mut mpsc::UnboundedReceiver<UiCommand>,
     saved: SavedLogin,
@@ -343,7 +343,7 @@ async fn run_session(
 }
 
 async fn login_until_ready(
-    state: &AppState,
+    state: Arc<AppState>,
     desk: &Desk,
     inbox: &mut mpsc::UnboundedReceiver<UiCommand>,
     mut link: Connected,
@@ -362,12 +362,12 @@ async fn login_until_ready(
         .map_err(|_| "не удалось получить QR".to_owned())?;
         match step {
             LoginStep::Authorized => {
-                return hold_ready(state, desk, inbox, link, session).await;
+                return hold_ready(Arc::clone(&state), desk, inbox, link, session).await;
             }
             LoginStep::PasswordNeeded => match ask_password(desk, inbox, &link).await? {
                 LoopControl::Restart => {
                     let _ = link.client.sign_out().await;
-                    end_session(state, link, session).await;
+                    end_session(&state, link, session).await;
                     return Ok(LoopControl::Restart);
                 }
                 LoopControl::Continue => {}
@@ -384,7 +384,7 @@ async fn login_until_ready(
                             QrAction::Stay => {}
                             QrAction::Leave => {
                                 let _ = link.client.sign_out().await;
-                                end_session(state, link, session).await;
+                                end_session(&state, link, session).await;
                                 return Ok(LoopControl::Restart);
                             }
                             QrAction::Replace {
@@ -393,13 +393,13 @@ async fn login_until_ready(
                                 reply,
                             } => {
                                 let _ = link.client.sign_out().await;
-                                end_session(state, link, session).await;
+                                end_session(&state, link, session).await;
                                 let _ = reply.send(store_login(api_id, api_hash).map(|_| ()));
                                 return Ok(LoopControl::Restart);
                             }
                         }
                     }
-                    _ = wait_for_login_update(&mut link.updates, wait) => {}
+                    _ = wait_for_login_update(link.updates_mut(), wait) => {}
                 }
             }
         }
@@ -519,10 +519,10 @@ fn command_restarts(
 }
 
 async fn hold_ready(
-    state: &AppState,
+    state: Arc<AppState>,
     desk: &Desk,
     inbox: &mut mpsc::UnboundedReceiver<UiCommand>,
-    link: Connected,
+    mut link: Connected,
     session: Arc<KeychainSession<SystemSecretStore>>,
 ) -> Result<LoopControl, String> {
     let cache_note = if telegram_mcp_core::qr_login::warm_dialogs(&link.client)
@@ -541,6 +541,13 @@ async fn hold_ready(
         .map(|user| user.full_name())
         .filter(|name| !name.is_empty());
     state.set_telegram(Some(Arc::new(LiveTelegram::new(link.client.clone()))));
+    let incoming = Arc::clone(&state);
+    let task = telegram_mcp_core::live::spawn_incoming_watch(
+        link.client.clone(),
+        link.take_updates(),
+        Arc::new(move |message| incoming.record_incoming(message)),
+    );
+    state.set_update_task(task);
     let mut phase = Phase::screen("ready");
     phase.account_name = account_name;
     phase.message = cache_note;
@@ -550,7 +557,7 @@ async fn hold_ready(
         match command {
             UiCommand::Logout { reply } => {
                 let _ = link.client.sign_out().await;
-                end_session(state, link, session).await;
+                end_session(&state, link, session).await;
                 let _ = reply.send(Ok(()));
                 desk.set_phase(Phase::screen("credentials"));
                 return Ok(LoopControl::Restart);
@@ -563,7 +570,7 @@ async fn hold_ready(
             } => {
                 if replace {
                     let _ = link.client.sign_out().await;
-                    end_session(state, link, session).await;
+                    end_session(&state, link, session).await;
                     let result = store_login(api_id, api_hash).map(|_| ());
                     let _ = reply.send(result);
                     desk.set_phase(Phase::screen("credentials"));

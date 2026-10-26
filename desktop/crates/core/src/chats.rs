@@ -17,7 +17,19 @@ pub struct ChatRecord {
     pub marked_unread: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// A photo, document, voice note, video, or sticker attached to a message.
+/// Web-page previews are not attachments.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MediaInfo {
+    pub kind: String,
+    pub file_name: Option<String>,
+    pub mime: Option<String>,
+    pub size: Option<u64>,
+    pub duration: Option<f64>,
+    pub emoji: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct MessageRecord {
     pub id: i32,
     pub chat_id: i64,
@@ -25,6 +37,27 @@ pub struct MessageRecord {
     pub sender: String,
     pub text: String,
     pub date: String,
+    pub media: Option<MediaInfo>,
+    pub reply_to: Option<i32>,
+    pub topic_id: Option<i32>,
+    pub grouped_id: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParticipantRecord {
+    pub id: i64,
+    pub name: String,
+    pub username: Option<String>,
+    pub role: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TopicRecord {
+    pub id: i32,
+    pub title: String,
+    pub unread: i32,
+    pub closed: bool,
+    pub hidden: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -210,8 +210,20 @@ pub enum PasswordAttempt {
 pub struct Connected {
     pub client: Client,
     pub handle: SenderPoolFatHandle,
-    pub updates: mpsc::Receiver<UpdatesLike>,
+    updates: Option<mpsc::Receiver<UpdatesLike>>,
     runner: tokio::task::JoinHandle<()>,
+}
+
+impl Connected {
+    pub fn updates_mut(&mut self) -> &mut mpsc::Receiver<UpdatesLike> {
+        self.updates
+            .as_mut()
+            .expect("updates receiver already taken")
+    }
+
+    pub fn take_updates(&mut self) -> mpsc::Receiver<UpdatesLike> {
+        self.updates.take().expect("updates receiver already taken")
+    }
 }
 
 impl Connected {
@@ -247,7 +259,7 @@ where
     Ok(Connected {
         client,
         handle,
-        updates,
+        updates: Some(updates),
         runner,
     })
 }
