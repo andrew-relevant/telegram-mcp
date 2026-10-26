@@ -4469,7 +4469,7 @@ dependencies = [
 
 [[package]]
 name = "telegram-mcp"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "telegram-mcp-ipc",
  "tokio",
@@ -4477,7 +4477,7 @@ dependencies = [
 
 [[package]]
 name = "telegram-mcp-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "grammers-client",
  "grammers-session",
@@ -4491,7 +4491,7 @@ dependencies = [
 
 [[package]]
 name = "telegram-mcp-desktop"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4508,7 +4508,7 @@ dependencies = [
 
 [[package]]
 name = "telegram-mcp-ipc"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "dirs 7.0.0",
  "tokio",
@@ -4517,7 +4517,7 @@ dependencies = [
 
 [[package]]
 name = "telegram-mcp-mcp"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "rmcp",
  "serde_json",

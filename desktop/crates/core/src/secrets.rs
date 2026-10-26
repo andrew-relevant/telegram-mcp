@@ -6,8 +6,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
-/// Windows credential service, and the name of keychain items written by
-/// earlier macOS builds. Current macOS builds do not open this service.
+/// Windows credential service. macOS builds do not open it.
 pub const SERVICE_NAME: &str = "app.telegram-mcp.desktop";
 pub const API_ID_ACCOUNT: &str = "api-id";
 pub const API_HASH_ACCOUNT: &str = "api-hash";
@@ -216,23 +215,30 @@ impl SecretStore for MemorySecretStore {
     }
 }
 
-/// macOS Keychain and Windows Credential Manager. The stdio shim must not construct this.
+/// Owner-only files on macOS, Windows Credential Manager elsewhere.
+/// The stdio shim must not construct this.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SystemSecretStore;
 
 #[cfg(target_os = "macos")]
 impl SecretStore for SystemSecretStore {
     fn get(&self, account: &str) -> Result<Option<Vec<u8>>, SecretStoreError> {
-        crate::macos_keychain::get(account)
+        crate::secret_file::get(&secret_root()?, account)
     }
 
     fn set(&self, account: &str, secret: &[u8]) -> Result<(), SecretStoreError> {
-        crate::macos_keychain::set(account, secret)
+        crate::secret_file::set(&secret_root()?, account, secret)
     }
 
     fn delete(&self, account: &str) -> Result<(), SecretStoreError> {
-        crate::macos_keychain::delete(account)
+        crate::secret_file::delete(&secret_root()?, account)
     }
+}
+
+#[cfg(target_os = "macos")]
+fn secret_root() -> Result<std::path::PathBuf, SecretStoreError> {
+    telegram_mcp_ipc::app_data_dir()
+        .map_err(|_| SecretStoreError::new("не найден каталог приложения"))
 }
 
 #[cfg(not(target_os = "macos"))]

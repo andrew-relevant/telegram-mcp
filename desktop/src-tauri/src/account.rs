@@ -1,6 +1,6 @@
 //! Window state: credentials, QR, cloud password, and logout.
 //!
-//! The system keychain is used only from the background task, never from a test.
+//! Saved login data is read only from the background task, never from a test.
 
 use std::sync::{Arc, Mutex};
 
