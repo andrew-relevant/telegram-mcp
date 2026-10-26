@@ -45,9 +45,9 @@ jobs:
           tagName: v__VERSION__
           releaseName: Telegram MCP v__VERSION__
           releaseBody: |
-            macOS: откройте DMG и перетащите Telegram MCP в «Программы». Файл aarch64 — для Apple Silicon, x64 — для Intel. При первом запуске система напишет, что разработчик не опознан: «Системные настройки» → «Конфиденциальность и безопасность» → «Всё равно открыть».
+            Скачивайте файл, у которого в списке написано «Скачать». Остальные файлы на странице не нужны.
 
-            Windows: запустите установщик. SmartScreen может запросить подтверждение.
+            Mac с Apple Silicon и Mac Intel — это разные DMG. Windows — файл EXE. DMG откройте и перетащите Telegram MCP в «Программы». EXE запустите. При первом запуске система может написать, что разработчик не опознан.
 
             В окне приложения введите api_id и api_hash с my.telegram.org, отсканируйте QR и нажмите «Подключить» у нужного клиента. После этого клиент нужно полностью перезапустить.
           releaseDraft: true
@@ -55,3 +55,27 @@ jobs:
           uploadUpdaterJson: false
           retryAttempts: 3
           args: ${{ matrix.args }}
+
+  label:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Label the files a person should download
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" --jq '.assets[] | [.id, .name] | @tsv' |
+            while IFS="$(printf '\t')" read -r id name; do
+              case "$name" in
+                *aarch64.dmg) label="Скачать: Mac Apple Silicon" ;;
+                *x64.dmg) label="Скачать: Mac Intel" ;;
+                *setup.exe) label="Скачать: Windows" ;;
+                *.app.tar.gz) label="Не скачивать: архив без установщика" ;;
+                *.msi) label="Не скачивать: второй установщик Windows" ;;
+                *) continue ;;
+              esac
+              gh api --method PATCH -f label="$label" \
+                "repos/${GITHUB_REPOSITORY}/releases/assets/${id}" >/dev/null
+            done
