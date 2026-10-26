@@ -66,8 +66,17 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" --jq '.assets[] | [.id, .name] | @tsv' |
-            while IFS="$(printf '\t')" read -r id name; do
+          case "$tag" in
+            v*) ;;
+            *) echo "unexpected tag: ${tag}" >&2; exit 1 ;;
+          esac
+          assets="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq ".[] | select(.tag_name==\"${tag}\") | .assets[] | [.id, .name] | @tsv")"
+          if [ -z "$assets" ]; then
+            echo "release assets not found for ${tag}" >&2
+            exit 1
+          fi
+          while IFS="$(printf '\t')" read -r id name; do
               case "$name" in
                 *aarch64.dmg) label="Скачать: Mac Apple Silicon" ;;
                 *x64.dmg) label="Скачать: Mac Intel" ;;
@@ -78,4 +87,4 @@ jobs:
               esac
               gh api --method PATCH -f label="$label" \
                 "repos/${GITHUB_REPOSITORY}/releases/assets/${id}" >/dev/null
-            done
+            done <<< "$assets"
